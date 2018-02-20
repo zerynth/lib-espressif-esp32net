@@ -1,0 +1,23 @@
+{
+    "dependencies": {
+        "vhal.zerynth.xtensalx6_esp32": "r2.0.11"
+    },
+    "description": "Driver for ESP32 Networking (Wifi+Ethernet)",
+    "fullname": "lib.espressif.esp32net",
+    "git_pointer": "zerynth://zerynth-libs/espressif-esp32net",
+    "info": {
+        "chip_manufacturer": "Espressif",
+        "chip_name": "ESP32",
+        "name": "Network Driver",
+        "type": "Connectivity"
+    },
+    "keywords": [
+        "wireless",
+        "wifi",
+        "ethernet"
+    ],
+    "repo": "official",
+    "title": "ESP32 Networking",
+    "version": "r2.0.11",
+    "whatsnew": ""
+}
