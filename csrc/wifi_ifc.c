@@ -89,7 +89,7 @@ typedef struct _sslsock {
 
 SSLSock sslsocks[MAX_SSLSOCKS];
 
-#define SSLSOCK_NUM 0xfe
+#define SSLSOCK_NUM (0xfe + LWIP_SOCKET_OFFSET)
 
 int mbedtls_full_connect(SSLSock* ssock, const struct sockaddr* name, socklen_t namelen);
 int mbedtls_full_close(SSLSock* ssock);
@@ -140,6 +140,7 @@ esp_err_t net_event_handler(void* ctx, system_event_t* event)
         else if (drv.status == STATUS_LINKING) {
             printf("Can't connect\n");
             drv.error = ERROR_CANT_CONNECT;
+            printf("disconnect reason: %d", event->event_info.disconnected.reason);
             vosSemSignal(drv.link_lock);
         }
         else {
@@ -169,6 +170,7 @@ esp_err_t net_event_handler(void* ctx, system_event_t* event)
         }
         else if (drv.status == STATUS_LINKING) {
             printf("Can't connect\n");
+            printf("disconnect reason: %d", event->event_info.disconnected.reason);
             drv.error = ERROR_CANT_CONNECT;
             vosSemSignal(drv.link_lock);
         } 
@@ -184,6 +186,7 @@ esp_err_t net_event_handler(void* ctx, system_event_t* event)
 }
 
 #if defined(VHAL_WIFI)
+extern wifi_init_config_t _wificfg;
 C_NATIVE(_espwifi_init)
 {
     NATIVE_UNWARN();
@@ -199,8 +202,9 @@ C_NATIVE(_espwifi_init)
     if (CHECK_RES())
         return ERR_IOERROR_EXC;
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_err = esp_wifi_init(&cfg);
+    // wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    printf("CFG %x %x\n",&_wificfg);
+    esp_err = esp_wifi_init(&_wificfg);
     if (CHECK_RES())
         return ERR_IOERROR_EXC;
     esp_err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
@@ -260,6 +264,7 @@ C_NATIVE(_espeth_init)
     cfg.phy_addr = 0; //CONFIG_PHY_ADDRESS;
     cfg.gpio_config = eth_gpio_config_rmii;
     cfg.tcpip_input = tcpip_adapter_eth_input;
+    cfg.clock_mode = ETH_CLOCK_GPIO0_IN;// CONFIG_PHY_CLOCK_MODE;
 
     esp_err = esp_eth_init(&cfg);
     if (CHECK_RES())
@@ -296,8 +301,8 @@ C_NATIVE(esp32_wifi_link)
     esp_err = esp_wifi_set_mode(WIFI_MODE_STA);
     if (CHECK_RES()) {
         drv.status = STATUS_IDLE;
-        ACQUIRE_GIL();
         printf("- %x\n", esp_err);
+        ACQUIRE_GIL();
         return ERR_IOERROR_EXC;
     }
 
@@ -322,6 +327,7 @@ C_NATIVE(esp32_wifi_link)
         return ERR_IOERROR_EXC;
     }
     esp_err = esp_wifi_start();
+    printf("START\n");
     if (CHECK_RES()) {
         drv.status = STATUS_IDLE;
         ACQUIRE_GIL();
@@ -329,6 +335,7 @@ C_NATIVE(esp32_wifi_link)
         return ERR_IOERROR_EXC;
     }
     esp_err = esp_wifi_connect();
+    printf("CONNECT\n");
     if (CHECK_RES()) {
         drv.status = STATUS_IDLE;
         ACQUIRE_GIL();
@@ -340,8 +347,8 @@ C_NATIVE(esp32_wifi_link)
     ACQUIRE_GIL();
 
     if (drv.error) {
-        drv.error = 0;
         printf("**** %x\n", esp_err);
+        drv.error = 0;
         return ERR_IOERROR_EXC;
     }
     return ERR_OK;
@@ -410,6 +417,7 @@ C_NATIVE(esp32_eth_link)
 
     esp_eth_enable();
     drv.status = STATUS_LINKING;
+    printf("HAS LINK INFO %i\n",drv.has_link_info);
     if (drv.has_link_info) {
         tcpip_adapter_ip_info_t ip_info;
         ip_info.ip = drv.ip;
@@ -769,6 +777,7 @@ C_NATIVE(esp32_net_recv_into)
         rb += r;
     }
     ACQUIRE_GIL();
+    //printf("err %i\n",r);
     if (r <= 0) {
         if (r == 0) {
             if (rb < len) {
@@ -1043,6 +1052,14 @@ C_NATIVE(esp32_wifi_scan)
     wifi_ap_record_t* rec;
     memset(&ssconf, 0, sizeof(wifi_scan_config_t));
 
+    esp_err = esp_wifi_start();
+    printf("START\n");
+    if (CHECK_RES()) {
+        drv.status = STATUS_IDLE;
+        ACQUIRE_GIL();
+        printf("** %x\n", esp_err);
+        return ERR_IOERROR_EXC;
+    }
     esp_err = esp_wifi_scan_start(&ssconf, true);
     if (CHECK_RES()) {
         ACQUIRE_GIL();

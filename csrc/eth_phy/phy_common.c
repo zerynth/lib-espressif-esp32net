@@ -15,7 +15,7 @@
 #include "eth_phy/phy.h"
 #include "eth_phy/phy_reg.h"
 #include "driver/gpio.h"
-//#include "esp_log.h"
+// #include "esp_log.h"
 
 static const char *TAG = "phy_common";
 
@@ -41,8 +41,10 @@ void phy_rmii_configure_data_interface_pins(void)
 void phy_rmii_smi_configure_pins(uint8_t mdc_gpio, uint8_t mdio_gpio)
 {
     gpio_matrix_out(mdc_gpio, EMAC_MDC_O_IDX, 0, 0);
+    PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[mdc_gpio], PIN_FUNC_GPIO);
     gpio_matrix_out(mdio_gpio, EMAC_MDO_O_IDX, 0, 0);
     gpio_matrix_in(mdio_gpio, EMAC_MDI_I_IDX, 0);
+    PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[mdio_gpio], PIN_FUNC_GPIO);
 }
 
 void phy_mii_enable_flow_ctrl(void)
@@ -55,10 +57,10 @@ void phy_mii_enable_flow_ctrl(void)
 bool phy_mii_check_link_status(void)
 {
     if ((esp_eth_smi_read(MII_BASIC_MODE_STATUS_REG) & MII_LINK_STATUS)) {
-        //ESP_LOGD(TAG, "phy_mii_check_link_status(UP)");
+        // ESP_LOGD(TAG, "phy_mii_check_link_status(UP)");
         return true;
     } else {
-        //ESP_LOGD(TAG, "phy_mii_check_link_status(DOWN)");
+        // ESP_LOGD(TAG, "phy_mii_check_link_status(DOWN)");
         return false;
     }
 }
@@ -66,10 +68,10 @@ bool phy_mii_check_link_status(void)
 bool phy_mii_get_partner_pause_enable(void)
 {
     if((esp_eth_smi_read(MII_PHY_LINK_PARTNER_ABILITY_REG) & MII_PARTNER_PAUSE)) {
-        //ESP_LOGD(TAG, "phy_mii_get_partner_pause_enable(TRUE)");
+        // ESP_LOGD(TAG, "phy_mii_get_partner_pause_enable(TRUE)");
         return true;
     } else {
-        //ESP_LOGD(TAG, "phy_mii_get_partner_pause_enable(FALSE)");
+        // ESP_LOGD(TAG, "phy_mii_get_partner_pause_enable(FALSE)");
         return false;
     }
 }

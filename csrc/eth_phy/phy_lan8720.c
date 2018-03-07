@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "esp_attr.h"
-//#include "esp_log.h"
-#include <rom/ets_sys.h>
+// #include "esp_log.h"
 #include "esp_eth.h"
+#include "soc/soc.h"
 
 #include "eth_phy/phy_lan8720.h"
 #include "eth_phy/phy_reg.h"
@@ -119,6 +119,7 @@ const eth_config_t phy_lan8720_default_ethernet_config = {
     // for defaults.
     .phy_addr = 0,
     .mac_mode = ETH_MODE_RMII,
+    .clock_mode = ETH_CLOCK_GPIO0_IN,
     //Only FULLDUPLEX mode support flow ctrl now!
     .flow_ctrl_enable = true,
     .phy_init = phy_lan8720_init,
