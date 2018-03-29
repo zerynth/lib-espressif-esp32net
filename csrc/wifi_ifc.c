@@ -586,12 +586,12 @@ void bcm_prepare_addr(sockaddr_t* vmSocketAddr, NetAddress* addr)
     vmSocketAddr->sin_port = addr->port;
     vmSocketAddr->sin_addr.s_addr = addr->ip;
 }
-int errno;
+// int errno;
 
-int* __errno(void)
-{
-    return &errno;
-}
+// int* __errno(void)
+// {
+//     return &errno;
+// }
 
 C_NATIVE(esp32_net_socket)
 {
@@ -785,7 +785,7 @@ C_NATIVE(esp32_net_recv_into)
             }
         }
         else {
-            if (r == MBEDTLS_ERR_SSL_TIMEOUT || r == ETIMEDOUT)
+            if (r == MBEDTLS_ERR_SSL_TIMEOUT || *__errno() == EAGAIN || *__errno() == ETIMEDOUT)
                 return ERR_TIMEOUT_EXC;
             return ERR_IOERROR_EXC;
         }
@@ -860,23 +860,21 @@ C_NATIVE(esp32_net_setsockopt)
     }
 
     RELEASE_GIL();
-    if (sock >= SSLSOCK_NUM) {
-        if (optname == SO_RCVTIMEO) {
-            mbedtls_ssl_conf_read_timeout(&sslsocks[(sock)-SSLSOCK_NUM].conf, optvalue);
-        }
-        else {
-            ACQUIRE_GIL();
-            return ERR_UNSUPPORTED_EXC;
-        }
+    if (optname == SO_RCVTIMEO && sock >= SSLSOCK_NUM) {
+        mbedtls_ssl_conf_read_timeout(&sslsocks[(sock)-SSLSOCK_NUM].conf, optvalue);
+    }
+    else if (optname == SO_RCVTIMEO) {
+        struct timeval tms;
+        tms.tv_sec = optvalue / 1000;
+        tms.tv_usec = (optvalue % 1000) * 1000;
+        sock = lwip_setsockopt_r(sock, level, optname, &tms, sizeof(struct timeval));
     }
     else {
-        if (optname == SO_RCVTIMEO) {
-            ACQUIRE_GIL();
-            return ERR_UNSUPPORTED_EXC;
+        if (sock >= SSLSOCK_NUM) {
+            mbedtls_net_context* ctx = &sslsocks[(sock)-SSLSOCK_NUM].fd;
+            sock = ctx->fd;
         }
-        else {
-            sock = lwip_setsockopt_r(sock, level, optname, &optvalue, sizeof(optvalue));
-        }
+        sock = lwip_setsockopt_r(sock, level, optname, &optvalue, sizeof(optvalue));
     }
     ACQUIRE_GIL();
     if (sock < 0)
@@ -1475,6 +1473,23 @@ C_NATIVE(esp32_secure_socket)
         sslsock->initialized = 1;
     }
 
+    mbedtls_net_context* netctx = &sslsock->fd;
+
+    mbedtls_net_init(netctx);
+    netctx->fd = (int)lwip_socket(sslsock->family, sslsock->socktype, sslsock->proto);
+    if (netctx->fd < 0) {
+        mbedtls_entropy_free(&sslsock->conf);
+        mbedtls_ssl_config_free(&sslsock->conf);
+        mbedtls_ctr_drbg_free(&sslsock->ctr_drbg);
+        mbedtls_x509_crt_free(&sslsock->cacert);
+        mbedtls_x509_crt_free(&sslsock->clicert);
+        mbedtls_pk_free(&sslsock->pkey);
+        mbedtls_ssl_free(&sslsock->ssl);
+        sslsock->initialized = 0;
+        err = MBEDTLS_ERR_NET_SOCKET_FAILED;
+        goto exit;
+    }
+
     sslsock->assigned = 1;
     err = ERR_OK;
 exit:
@@ -1513,12 +1528,6 @@ int mbedtls_full_connect(SSLSock* ssock, const struct sockaddr* name, socklen_t 
 {
     int ret = MBEDTLS_ERR_NET_UNKNOWN_HOST;
     mbedtls_net_context* ctx = &ssock->fd;
-
-    mbedtls_net_init(ctx);
-    ctx->fd = (int)lwip_socket(ssock->family, ssock->socktype, ssock->proto);
-    if (ctx->fd < 0) {
-        return MBEDTLS_ERR_NET_SOCKET_FAILED;
-    }
 
     if (lwip_connect_r(ctx->fd, name, namelen) != 0) {
         mbedtls_net_free(ctx);
