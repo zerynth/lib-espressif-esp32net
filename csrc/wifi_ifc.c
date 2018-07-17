@@ -15,6 +15,7 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/error.h"
 #include "mbedtls/certs.h"
+#include "zerynth_hwcrypto.h"
 
 #undef printf
 //#define printf(...) vbl_printf_stdout(__VA_ARGS__)
@@ -1442,12 +1443,25 @@ C_NATIVE(esp32_secure_socket)
         }
         mbedtls_ssl_conf_authmode(&sslsock->conf, (options&_CERT_NONE) ? MBEDTLS_SSL_VERIFY_NONE: ((options&_CERT_OPTIONAL) ? MBEDTLS_SSL_VERIFY_OPTIONAL:MBEDTLS_SSL_VERIFY_REQUIRED));
         if (!(options&_CERT_NONE)) mbedtls_ssl_conf_ca_chain(&sslsock->conf, &sslsock->cacert, NULL);
-        if (clilen && pkeylen) {
-            err = mbedtls_pk_parse_key(&sslsock->pkey,pkeybuf,pkeylen,NULL,0);
-            printf("PKEY %i\n",err);
-            if (err) {
-                err = ERR_VALUE_EXC;
-                goto exit;
+        if (clilen) {
+            if (pkeylen == 0) {
+                // only ec dummy key supported at the moment
+                if (zhwcrypto_info != NULL && zhwcrypto_info->key_type != ZHWCRYPTO_KEY_ECKEY)
+                    return ERR_UNSUPPORTED_EXC;
+                if (zhwcrypto_info == NULL)
+                    return ERR_UNSUPPORTED_EXC;
+                const mbedtls_pk_info_t *pk_info;
+                pk_info = mbedtls_pk_info_from_type( MBEDTLS_PK_ECKEY );
+                sslsocks->pkey.pk_info = NULL; // to make pk_setup work
+                mbedtls_pk_setup(&sslsock->pkey, pk_info);
+            }
+            else {
+                err = mbedtls_pk_parse_key(&sslsock->pkey,pkeybuf,pkeylen,NULL,0);
+                printf("PKEY %i\n",err);
+                if (err) {
+                    err = ERR_VALUE_EXC;
+                    goto exit;
+                }
             }
             err = mbedtls_x509_crt_parse(&sslsock->clicert, clibuf, clilen);
             printf("CCERT %i\n",err);

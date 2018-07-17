@@ -1,6 +1,6 @@
 {
     "dependencies": {
-        "vhal.zerynth.xtensalx6_esp32": "r2.1.1"
+        "vhal.zerynth.xtensalx6_esp32": "r2.1.2"
     },
     "description": "Driver for ESP32 Networking (Wifi+Ethernet)",
     "fullname": "lib.espressif.esp32net",
@@ -18,6 +18,6 @@
     ],
     "repo": "official",
     "title": "ESP32 Networking",
-    "version": "r2.1.1",
+    "version": "r2.1.2",
     "whatsnew": ""
 }
