@@ -1144,7 +1144,6 @@ C_NATIVE(esp32_turn_station_off)
             return ERR_IOERROR_EXC;
         drv.connected = 0;
         drv.status = STATUS_IDLE;
-        drv.mode = WIFI_MODE_AP;
     }
     *res = MAKE_NONE();
     return ERR_OK;
@@ -1302,7 +1301,6 @@ C_NATIVE(esp32_turn_ap_off)
             return ERR_IOERROR_EXC;
         drv.connected = 0;
         drv.status = STATUS_IDLE;
-        drv.mode = WIFI_MODE_STA;
     }
     *res = MAKE_NONE();
     return ERR_OK;
