@@ -1314,6 +1314,9 @@ C_NATIVE(esp32_turn_ap_off)
 #define _CLIENT_AUTH 8
 #define _SERVER_AUTH 16
 
+ZHWCryptoAPIPointers *zhwcrypto_api_pointers_backup = NULL;
+extern ZHWCryptoAPIPointers null_api_pointers;
+
 C_NATIVE(esp32_secure_socket)
 {
     C_NATIVE_UNWARN();
@@ -1405,6 +1408,13 @@ C_NATIVE(esp32_secure_socket)
             goto exit;
         }
 
+        if (!zhwcrypto_api_pointers_backup && zhwcrypto_api_pointers) {
+            // backup current hw crypto api pointers, they are made active only for contexts with 
+            // clicert and null private key
+            zhwcrypto_api_pointers_backup = zhwcrypto_api_pointers;
+        }
+        zhwcrypto_api_pointers = &null_api_pointers;
+
         if (certlen) {
             err = mbedtls_x509_crt_parse(&sslsock->cacert, certbuf, certlen);
             printf("CERT %i\n",err);
@@ -1448,6 +1458,8 @@ C_NATIVE(esp32_secure_socket)
                     return ERR_UNSUPPORTED_EXC;
                 if (zhwcrypto_info == NULL)
                     return ERR_UNSUPPORTED_EXC;
+
+                zhwcrypto_api_pointers = zhwcrypto_api_pointers_backup; // activate hw crypto functionalities
                 const mbedtls_pk_info_t *pk_info;
                 pk_info = mbedtls_pk_info_from_type( MBEDTLS_PK_ECKEY );
                 sslsocks->pkey.pk_info = NULL; // to make pk_setup work
