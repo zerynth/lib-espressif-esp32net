@@ -22,12 +22,11 @@ def auto_init():
 
 def init():
     """
-.. function:: init()  
-        
-        initializes the Wi-Fi chip connected to the device.
-        
-        The WiFi chip is setup and can be managed using the :ref:`Wi-Fi Module <stdlib_wifi>` of the Zerynth Standard Library.      
-            
+..  function:: init()
+
+    Initializes the Ethernet chip connected to the device.
+
+    The Ethernet chip is setup and can be managed using the :ref:`Ethernet Module <stdlib_eth>` of the Zerynth Standard Library.
     """
     _hwinit()
     __builtins__.__default_net["eth"] = __module__
