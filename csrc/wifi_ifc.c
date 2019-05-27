@@ -1,4 +1,3 @@
-#include "zerynth.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_event_loop.h"
@@ -7,6 +6,7 @@
 #include "lwip/dns.h"
 #include "lwip/sockets.h"
 #include "lwip/api.h"
+#include "lwip/ip_addr.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/net.h"
 #include "mbedtls/esp_debug.h"
@@ -16,9 +16,12 @@
 #include "mbedtls/error.h"
 #include "mbedtls/certs.h"
 #include "zerynth_hwcrypto.h"
+#include "zerynth.h"
+#include "zerynth_sockets.h"
+#include "zerynth_ssl.h"
 
 #undef printf
-//#define printf(...) vbl_printf_stdout(__VA_ARGS__)
+// #define printf(...) vbl_printf_stdout(__VA_ARGS__)
 #define printf(...)
 
 #define CHECK_RES() (esp_err != ESP_OK)
@@ -133,6 +136,7 @@ esp_err_t net_event_handler(void* ctx, system_event_t* event)
         }
     } break;
     case SYSTEM_EVENT_STA_DISCONNECTED: {
+        drv.connected = 0;
         if (drv.status == STATUS_UNLINKING) {
             //requested unlink
             printf("Disconnected\n");
@@ -146,9 +150,9 @@ esp_err_t net_event_handler(void* ctx, system_event_t* event)
         }
         else {
             //disconnected, try to reconnect: TODO, do it better with a background thread
+            printf("Reconnecting\n");
             esp_wifi_connect();
         }
-        drv.connected = 0;
     } break;
 #endif
 #if defined(VHAL_ETH)
@@ -186,6 +190,49 @@ esp_err_t net_event_handler(void* ctx, system_event_t* event)
     return ESP_OK;
 }
 
+int esp32_gzsock_connect(int sock, const struct sockaddr *addr, socklen_t addrlen) {
+    return NETFN(connect, sock, addr, addrlen);
+}
+
+int esp32_gzsock_send(int sock, const void *dataptr, size_t size, int flags) {
+    return NETFN(send, sock, dataptr, size, flags);
+}
+
+int esp32_gzsock_recv(int sock, void *mem, size_t len, int flags) {
+    return NETFN(recv, sock, mem, len, flags);
+}
+
+int esp32_gzsock_close(int sock) {
+    return NETFN(close, sock);
+}
+
+SocketAPIPointers esp32_api;
+
+void init_socket_api_pointers(void) {
+    esp32_api.accept = lwip_accept_r;
+    esp32_api.bind   = lwip_bind_r;
+    esp32_api.shutdown = lwip_shutdown_r;
+    esp32_api.getpeername = lwip_getpeername_r;
+    esp32_api.getsockname = lwip_getsockname_r;
+    esp32_api.setsockopt = lwip_setsockopt_r;
+    esp32_api.close = esp32_gzsock_close;
+    esp32_api.connect = esp32_gzsock_connect;
+    esp32_api.listen = lwip_listen_r;
+    esp32_api.recv = esp32_gzsock_recv;
+    esp32_api.read = lwip_read_r;
+    esp32_api.recvfrom = lwip_recvfrom_r;
+    esp32_api.send = esp32_gzsock_send;
+    esp32_api.sendto = lwip_sendto_r;
+    esp32_api.socket = lwip_socket;
+    esp32_api.select = lwip_select;
+    esp32_api.ioctl = lwip_ioctl_r;
+    esp32_api.fcntl = lwip_fcntl_r;
+
+    esp32_api.inet_addr = ipaddr_addr;
+    esp32_api.inet_ntoa = ip4addr_ntoa;
+}
+
+
 #if defined(VHAL_WIFI)
 extern wifi_init_config_t _wificfg;
 C_NATIVE(_espwifi_init)
@@ -215,6 +262,10 @@ C_NATIVE(_espwifi_init)
     if (CHECK_RES())
         return ERR_IOERROR_EXC;
     drv.mode = WIFI_MODE_STA;
+    
+    init_socket_api_pointers();
+    gzsock_init(&esp32_api);
+    
     *res = MAKE_NONE();
 
     return ERR_OK;
@@ -270,7 +321,12 @@ C_NATIVE(_espeth_init)
     esp_err = esp_eth_init(&cfg);
     if (CHECK_RES())
         return ERR_IOERROR_EXC;
+    
+    init_socket_api_pointers();
+    gzsock_init(&esp32_api);
+    
     *res = MAKE_NONE();
+
     return ERR_OK;
 }
 
@@ -362,12 +418,12 @@ C_NATIVE(esp32_wifi_unlink)
     esp_err_t esp_err;
 
     RELEASE_GIL();
+    drv.status = STATUS_UNLINKING;
     esp_err = esp_wifi_disconnect();
     if (esp_err != ESP_OK) {
         ACQUIRE_GIL();
         return ERR_IOERROR_EXC;
     }
-    drv.status = STATUS_UNLINKING;
     vosSemWait(drv.link_lock);
     ACQUIRE_GIL();
 
@@ -410,6 +466,7 @@ C_NATIVE(esp32_eth_link)
     NATIVE_UNWARN();
 
     int32_t err;
+    int32_t sem_status;
     esp_err_t esp_err;
 
     *res = MAKE_NONE();
@@ -431,10 +488,16 @@ C_NATIVE(esp32_eth_link)
     else {
         tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_ETH);
     }
-    
-    vosSemWait(drv.link_lock);
+
+    sem_status = vosSemWaitTimeout(drv.link_lock, TIME_U(7, SECONDS));
+
     drv.status = STATUS_IDLE;
     ACQUIRE_GIL();
+
+    if (sem_status == VRES_TIMEOUT) {
+        printf("Timeout: Can't get IP addr\n");
+        return ERR_TIMEOUT_EXC;
+    }
 
     if (drv.error) {
         drv.error = 0;
@@ -610,8 +673,8 @@ C_NATIVE(esp32_net_socket)
     //printf("--CMD_SOCKET: %i %x\n", errno, (int)lwip_socket);
     RELEASE_GIL();
     // printf("-CMD_SOCKET: %i %x\n", errno, (int)lwip_socket);
-    sock = lwip_socket(AF_INET, (type == DRV_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM,
-        (type == DRV_SOCK_DGRAM) ? IPPROTO_UDP : IPPROTO_TCP);
+    sock = gzsock_socket(AF_INET, (type == DRV_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM,
+        (type == DRV_SOCK_DGRAM) ? IPPROTO_UDP : IPPROTO_TCP, NULL);
     ACQUIRE_GIL();
     //printf("CMD_SOCKET: %i %i\n", sock, errno);
     if (sock < 0)
@@ -633,7 +696,7 @@ C_NATIVE(esp32_net_connect)
     bcm_prepare_addr(&vmSocketAddr, &addr);
     RELEASE_GIL();
     //sock = lwip_connect(sock, &vmSocketAddr, sizeof(vmSocketAddr));
-    sock = NETFN(connect, sock, &vmSocketAddr, sizeof(vmSocketAddr));
+    sock = gzsock_connect(sock, &vmSocketAddr, sizeof(vmSocketAddr));
     ACQUIRE_GIL();
     printf("CMD_OPEN: %i %i\r\n", sock, 0);
     if (sock < 0) {
@@ -654,7 +717,7 @@ C_NATIVE(esp32_net_close)
     if (parse_py_args("i", nargs, args, &sock) != 1)
         return ERR_TYPE_EXC;
     RELEASE_GIL();
-    rr = NETFN(close, sock);
+    rr = gzsock_close(sock);
     printf("closing sock - result %i\n", rr);
     ACQUIRE_GIL();
     *res = PSMALLINT_NEW(sock);
@@ -676,7 +739,7 @@ C_NATIVE(esp32_net_send)
         return ERR_TYPE_EXC;
     RELEASE_GIL();
     printf("SEND %i %i\n", sock, len);
-    sock = NETFN(send, sock, buf, len, flags);
+    sock = gzsock_send(sock, buf, len, flags);
     ACQUIRE_GIL();
     if (sock < 0) {
         return ERR_IOERROR_EXC;
@@ -703,7 +766,7 @@ C_NATIVE(esp32_net_send_all)
     RELEASE_GIL();
     wrt = 0;
     while (wrt < len) {
-        w = NETFN(send, sock, buf + wrt, len - wrt, flags);
+        w = gzsock_send(sock, buf + wrt, len - wrt, flags);
         if (w < 0)
             break;
         wrt += w;
@@ -735,7 +798,7 @@ C_NATIVE(esp32_net_sendto)
     RELEASE_GIL();
     sockaddr_t vmSocketAddr;
     bcm_prepare_addr(&vmSocketAddr, &addr);
-    sock = lwip_sendto_r(sock, buf, len, flags, &vmSocketAddr, sizeof(sockaddr_t));
+    sock = gzsock_sendto(sock, buf, len, flags, &vmSocketAddr, sizeof(sockaddr_t));
     ACQUIRE_GIL();
 
     if (sock < 0) {
@@ -772,7 +835,7 @@ C_NATIVE(esp32_net_recv_into)
     int r;
     //printf("sock %i, buf %s, len %i, sz %i, flag %i, ofs %i\n",sock,buf,len,sz,flags,ofs);
     while (rb < len) {
-        r = NETFN(recv, sock, buf + rb, len - rb, flags);
+        r = gzsock_recv(sock, buf + rb, len - rb, flags);
         if (r <= 0)
             break;
         rb += r;
@@ -824,7 +887,7 @@ C_NATIVE(esp32_net_recvfrom_into)
     int r;
     sockaddr_t vmSocketAddr;
     socklen_t tlen = sizeof(vmSocketAddr);
-    r = lwip_recvfrom_r(sock, buf, len, flags, &vmSocketAddr, &tlen);
+    r = gzsock_recvfrom(sock, buf, len, flags, &vmSocketAddr, &tlen);
     ACQUIRE_GIL();
     addr.ip = vmSocketAddr.sin_addr.s_addr;
     addr.port = vmSocketAddr.sin_port;
@@ -868,14 +931,14 @@ C_NATIVE(esp32_net_setsockopt)
         struct timeval tms;
         tms.tv_sec = optvalue / 1000;
         tms.tv_usec = (optvalue % 1000) * 1000;
-        sock = lwip_setsockopt_r(sock, level, optname, &tms, sizeof(struct timeval));
+        sock = gzsock_setsockopt(sock, level, optname, &tms, sizeof(struct timeval));
     }
     else {
         if (sock >= SSLSOCK_NUM) {
             mbedtls_net_context* ctx = &sslsocks[(sock)-SSLSOCK_NUM].fd;
             sock = ctx->fd;
         }
-        sock = lwip_setsockopt_r(sock, level, optname, &optvalue, sizeof(optvalue));
+        sock = gzsock_setsockopt(sock, level, optname, &optvalue, sizeof(optvalue));
     }
     ACQUIRE_GIL();
     if (sock < 0)
@@ -896,7 +959,7 @@ C_NATIVE(esp32_net_bind)
     //addr.ip = bcm_net_ip.addr;
     bcm_prepare_addr(&serverSocketAddr, &addr);
     RELEASE_GIL();
-    sock = lwip_bind_r(sock, &serverSocketAddr, sizeof(sockaddr_t));
+    sock = gzsock_bind(sock, &serverSocketAddr, sizeof(sockaddr_t));
     ACQUIRE_GIL();
     if (sock < 0)
         return ERR_IOERROR_EXC;
@@ -912,7 +975,7 @@ C_NATIVE(esp32_net_listen)
     if (parse_py_args("ii", nargs, args, &sock, &maxlog) != 2)
         return ERR_TYPE_EXC;
     RELEASE_GIL();
-    maxlog = lwip_listen_r(sock, maxlog);
+    maxlog = gzsock_listen(sock, maxlog);
     ACQUIRE_GIL();
     if (maxlog)
         return ERR_IOERROR_EXC;
@@ -932,7 +995,7 @@ C_NATIVE(esp32_net_accept)
     memset(&clientaddr, 0, sizeof(sockaddr_t));
     addrlen = sizeof(sockaddr_t);
     RELEASE_GIL();
-    sock = lwip_accept_r(sock, &clientaddr, &addrlen);
+    sock = gzsock_accept(sock, &clientaddr, &addrlen);
     ACQUIRE_GIL();
     if (sock < 0)
         return ERR_IOERROR_EXC;
@@ -1002,7 +1065,7 @@ C_NATIVE(esp32_net_select)
 
     printf("maxsock %i\n", sock);
     RELEASE_GIL();
-    tmp = lwip_select((sock + 1), fdsets[0], fdsets[1], fdsets[2], ptm);
+    tmp = gzsock_select((sock + 1), fdsets[0], fdsets[1], fdsets[2], ptm);
     ACQUIRE_GIL();
 
     printf("result: %i\n", tmp);
@@ -1500,7 +1563,7 @@ C_NATIVE(esp32_secure_socket)
     mbedtls_net_context* netctx = &sslsock->fd;
 
     mbedtls_net_init(netctx);
-    netctx->fd = (int)lwip_socket(sslsock->family, sslsock->socktype, sslsock->proto);
+    netctx->fd = (int)gzsock_socket(sslsock->family, sslsock->socktype, sslsock->proto, NULL);
     if (netctx->fd < 0) {
         mbedtls_entropy_free(&sslsock->conf);
         mbedtls_ssl_config_free(&sslsock->conf);
@@ -1553,9 +1616,9 @@ int mbedtls_full_connect(SSLSock* ssock, const struct sockaddr* name, socklen_t 
     int ret = MBEDTLS_ERR_NET_UNKNOWN_HOST;
     mbedtls_net_context* ctx = &ssock->fd;
 
-    if (lwip_connect_r(ctx->fd, name, namelen) != 0) {
+    if (gzsock_connect(ctx->fd, name, namelen) != 0) {
         mbedtls_net_free(ctx);
-        lwip_close_r(ctx->fd);
+        gzsock_close(ctx->fd);
         return MBEDTLS_ERR_NET_CONNECT_FAILED;
     }
 
@@ -1586,4 +1649,485 @@ int mbedtls_full_connect(SSLSock* ssock, const struct sockaddr* name, socklen_t 
     // }
 
     return 0;
+}
+
+
+
+
+/////////////////// Promiscuous mode
+
+
+/*
+ * Some reources to understand formats:
+ * - https://en.wikipedia.org/wiki/802.11_Frame_Types
+ * - https://www.oreilly.com/library/view/80211-wireless-networks/0596100523/ch04.html
+ * - https://dalewifisec.wordpress.com/2014/05/17/the-to-ds-and-from-ds-fields/
+ * - https://docs.espressif.com/projects/esp-idf/en/v3.2/api-reference/wifi/esp_wifi.html#_CPPv425wifi_promiscuous_filter_t
+*/
+
+
+/*
+ * Sniffer architecture
+ *
+ * A Ring buffer holds sniffed packets interesting data (hdr, rssi, channel, payload size, payload pointer)
+ *
+ * Packets are first filtered in the esp32 callback by checking subtypes and direction. If the subfilter passes,
+ * they are put into the ring buffer. If it is full, packets starts to be discarded. If there is enough memory from the 
+ * payload memory pool, the payload is copied into newly allocated memory. Otherwise only the hdr is saved into the ring buffer.
+ *
+ * Packets are removed from the ring buffer when polled by python. Upon removal from ring buffer, the payload memory is freed.
+ *
+ * The implementation IS NOT THREAD SAFE = only one Python thread at a time can call the .sniffed() function.
+ *
+ */
+
+
+//A MAC PDU structure (addresses change semantic based on to_ds, from_ds)
+typedef struct {
+	uint8_t protocol:2;
+	uint8_t type:2;
+	uint8_t subtype:4;
+    uint8_t to_ds:1;
+    uint8_t from_ds:1;
+    uint8_t flags:6;
+	uint16_t duration_id;
+	uint8_t addr1[6]; /* receiver address */
+	uint8_t addr2[6]; /* sender address */
+	uint8_t addr3[6]; /* filtering address */
+	uint16_t sequence_ctrl;
+	uint8_t addr4[6]; /* optional */
+} wifi_ieee80211_mac_hdr_t;
+
+// Wifi packet = PDU + DATA
+typedef struct {
+	wifi_ieee80211_mac_hdr_t hdr;
+	uint8_t payload[0]; /* network data ended with 4 bytes csum (CRC32) */
+} wifi_ieee80211_packet_t;
+
+
+//Single Ring buffer entry
+typedef struct _ring_entry {
+	wifi_ieee80211_mac_hdr_t hdr;
+    int8_t rssi;
+    uint8_t channel;
+    uint16_t payload_size;
+    uint8_t *payload;
+} RingEntry;
+
+
+//Sniffer status
+typedef struct _prom_str {
+    uint8_t active;         //sniffer is active
+    uint8_t pkt_types;      //bit mask for what kind of packet are filtered
+    uint8_t channel;        //current channel
+    uint8_t direction;      //selected directions: 00 -> bit0, 01 -> bit1, 10 -> bit2, 11 -> bit3  (to_ds,from_ds)
+    uint16_t channels;      //bit mask of active channels (channel 1 at bit 1, etc..)
+    uint16_t mgmt_subtypes; //bit mask of which subtypes of mgmt packets to return
+    uint16_t ctrl_subtypes; //bit mask of which subtypes of ctrl packets to return
+    uint16_t data_subtypes; //bit mask of which subtypes of data packets to return
+
+    uint16_t rsize;       //max packets in ring buffr
+    uint16_t rhead;       //head of ring buffer
+    uint16_t ritems;      //items in ring buffer
+    uint16_t hop_time;    //time in milliseconds to listen on each channel before hopping
+
+    uint32_t current_total_payload_size;    //memory allocated for payloads
+    uint32_t max_total_payload_size;        //max memory that can be allocated for payloads
+    uint32_t skipped_mem;                   //packets skipped due to ring full
+    uint32_t skipped_ctrl;                  //packets skipped due to ctrl subfilter
+    uint32_t skipped_data;                  //packets skipped due to data subfilter
+    uint32_t skipped_mgmt;                  //packets skipped due to mgmt subfilter
+    uint32_t skipped_dir;                   //packets skipped due to direction subfilter
+    uint32_t sniffed;                       //total packets sniffed since last started
+
+    RingEntry *ring;     //ring buffer for packets
+    VSemaphore ringsem;  //ring semaphore
+    VSysTimer chtimer;   //hop timer
+
+} WifiSniffer;
+
+
+WifiSniffer sniffer;
+
+
+//ring management
+RingEntry* _ring_get(RingEntry *re){
+    RingEntry *ret = NULL;
+    vosSemWait(sniffer.ringsem);
+    if (sniffer.ritems>0){
+        //get one
+        ret = &sniffer.ring[sniffer.rhead];
+        memcpy(re,ret,sizeof(RingEntry));
+        sniffer.ritems--;
+        sniffer.rhead = (sniffer.rhead+1)%sniffer.rsize;
+    } else {
+        //oops, empty
+    }
+    vosSemSignal(sniffer.ringsem);
+    return ret;
+}
+
+int _ring_elements(){
+    int r;
+    vosSemWait(sniffer.ringsem);
+    r = sniffer.ritems;
+    vosSemSignal(sniffer.ringsem);
+    return r;
+}
+
+RingEntry* _ring_put(RingEntry *re, uint8_t *payload){
+    RingEntry *ret = NULL;
+    int next;
+    vosSemWait(sniffer.ringsem);
+    if (sniffer.ritems>=sniffer.rsize) {
+        //oops, ring is full, discard pkt
+    } else {
+        next = (sniffer.rhead+sniffer.ritems)%sniffer.rsize;
+        sniffer.ritems++;
+        ret = &sniffer.ring[next];
+        // printf("put %i %i\n",sniffer.max_total_payload_size-sniffer.current_total_payload_size,re->payload_size);
+
+        if ((sniffer.max_total_payload_size-sniffer.current_total_payload_size)>(re->payload_size)){
+            //ok, we can allocate memory for the payload
+            if (re->payload_size) {
+                re->payload = gc_malloc(re->payload_size);
+                __memcpy(re->payload,payload,re->payload_size);
+                sniffer.current_total_payload_size+=re->payload_size;
+            }
+        } else {
+            re->payload = NULL;  //no payload can be allocated
+        }
+        __memcpy(ret,re,sizeof(RingEntry));
+    }
+    vosSemSignal(sniffer.ringsem);
+    return ret;
+}
+
+void _ring_free(RingEntry *re) {
+    // printf("RE %x %i %x\n",re,re->payload_size,re->payload);
+    if (re && re->payload){
+        //free the frame body memory
+        gc_free(re->payload);
+        vosSemWait(sniffer.ringsem);
+        sniffer.current_total_payload_size-=re->payload_size;
+        vosSemSignal(sniffer.ringsem);
+    }
+}
+
+// Sniffing callback
+void mgmt_pkt_sniffer_handler(void *buff, wifi_promiscuous_pkt_type_t type){
+    //ignore pkt if sniffer not active
+    if (!sniffer.active) return;
+
+    sniffer.sniffed++;
+    const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *) buff;
+    const wifi_ieee80211_mac_hdr_t *hdr = (wifi_ieee80211_mac_hdr_t *) ppkt->payload;
+    const wifi_ieee80211_packet_t *hdrp = (wifi_ieee80211_packet_t *) ppkt->payload;
+
+
+    //check direction filter
+    uint8_t dir = (hdr->to_ds<<1)|(hdr->from_ds);
+    if (!((1<<dir)&sniffer.direction)){
+        //bad direction
+        sniffer.skipped_dir++;
+        return;
+    }
+
+    //check subtype filters
+    if (hdr->type==0) {
+        //mgmt, check if filtered
+
+        if (!((1<<hdr->subtype)&(sniffer.mgmt_subtypes))){
+            //no way, filter it
+            sniffer.skipped_mgmt++;
+            return;
+        }
+
+    } else if (hdr->type==1) {
+        //ctrl
+        if (!((1<<hdr->subtype)&(sniffer.ctrl_subtypes))){
+            //no way, filter it
+            sniffer.skipped_ctrl++;
+            return;
+        }
+    } else if(hdr->type==2){
+        //data
+        if (!((1<<hdr->subtype)&(sniffer.data_subtypes))){
+            //no way, filter it
+            sniffer.skipped_data++;
+            return;
+        }
+    } else {
+        //unknown
+        return;
+    }
+
+
+    //create RingEntry
+    RingEntry re;
+    __memcpy(&re.hdr,hdr,sizeof(wifi_ieee80211_mac_hdr_t));
+    re.channel = ppkt->rx_ctrl.channel;
+    re.rssi = ppkt->rx_ctrl.rssi;
+    re.payload_size = ppkt->rx_ctrl.sig_len;
+    re.payload = NULL;
+
+    if(!_ring_put(&re,hdrp->payload)){
+        // printf("Skipped due to ring full\n");
+        sniffer.skipped_mem++;
+        return;
+    }
+
+    //analyze packets
+    // printf("%x %x %x %i %i %i %i %i\n",
+    //         re.hdr.protocol,
+    //         re.hdr.type,
+    //         re.hdr.subtype,
+    //         re.rssi,
+    //         re.payload_size,
+    //         re.channel,
+    //         sniffer.current_total_payload_size,
+    //         sniffer.max_total_payload_size);
+}
+
+
+// search for the next channel to hop to
+void _hop_next_channel(){
+    int sch = (sniffer.channel) ? (sniffer.channel):1;
+    int p,pn;
+    for(p=1;p<=14;p++){
+        pn = (sch+p)%15;
+        if(!pn) pn++;
+        if (sniffer.channels & (1<<pn)) {
+            //yes, we found the next active channel, jump to it
+            sch = pn;
+            break;
+        }
+    }
+    sniffer.channel = sch;
+    esp_wifi_set_channel(sch, WIFI_SECOND_CHAN_NONE); 
+}
+
+// timer callback
+void _hop_timer(void *args){
+    //change channel
+    if (sniffer.active)
+        _hop_next_channel();
+}
+
+
+
+//disable sniffing
+esp_err_t _promiscuous_off(){
+    //disable sniffing
+    esp_err_t esp_err = esp_wifi_set_promiscuous(false);
+    sniffer.active = 0;
+    
+    //destroy ring
+    if (sniffer.ring) {
+        //empty the ring
+        RingEntry re;
+        while(_ring_get(&re)){
+            _ring_free(&re);
+        }
+        //free the ring
+        gc_free(sniffer.ring);
+        sniffer.ring = NULL;
+    }
+
+    if (sniffer.chtimer) {
+        vosSysLock();
+        vosTimerDestroy(sniffer.chtimer);
+        vosSysUnlock();
+        sniffer.chtimer=NULL;
+    }
+
+    return esp_err;
+}
+
+
+C_NATIVE(esp32_promiscuous_on)
+{
+    NATIVE_UNWARN();
+    esp_err_t esp_err;
+    int32_t pkt_types, direction, _channels, _mgmt, _ctrl, _data, hop_time, pkt_buffer, max_payloads;
+
+
+    if (parse_py_args("iiiiiiiii", nargs, args,
+            &pkt_types, &direction,
+            &_channels,
+            &_mgmt,&_ctrl,&_data,
+            &hop_time,
+            &pkt_buffer, &max_payloads)
+        != 9)
+        return ERR_TYPE_EXC;
+
+
+    // printf("Sniffing with %x %x %x %x %x %i %i %i\n",pkt_types,_channels,_mgmt,_ctrl,_data,hop_time, pkt_buffer, max_payloads);
+    *res = MAKE_NONE();
+
+    esp_err = _promiscuous_off();
+    if(CHECK_RES()){
+        return ERR_IOERROR_EXC;
+    }
+
+    //reconfigure sniffing
+    sniffer.pkt_types = pkt_types;
+    sniffer.channels = _channels;
+    sniffer.direction = direction;
+    sniffer.ctrl_subtypes = _ctrl;
+    sniffer.mgmt_subtypes = _mgmt;
+    sniffer.data_subtypes = _data;
+    sniffer.hop_time = hop_time;
+   
+    //zeroing stats
+    sniffer.sniffed = 0;
+    sniffer.skipped_mem = 0;
+    sniffer.skipped_data = 0;
+    sniffer.skipped_ctrl = 0;
+    sniffer.skipped_mgmt = 0;
+    sniffer.skipped_dir = 0;
+
+    //allocate ring
+    sniffer.rsize = pkt_buffer;
+    sniffer.rhead = 0;
+    sniffer.ritems = 0;
+    sniffer.current_total_payload_size = 0;
+    sniffer.max_total_payload_size = max_payloads;
+    sniffer.ring = gc_malloc(sizeof(RingEntry)*sniffer.rsize);
+
+    if (!sniffer.ring) {
+        //oops, out of memory!
+        return ERR_RUNTIME_EXC;
+    }
+
+    //allocate semaphore
+    if(!sniffer.ringsem) {
+        sniffer.ringsem = vosSemCreate(1);
+    }
+
+    //allocate hop timer
+    if(!sniffer.chtimer) {
+        sniffer.chtimer = vosTimerCreate();
+    }
+
+    
+    //configure filters
+    wifi_promiscuous_filter_t filter;
+    memset(&filter, 0, sizeof(filter));
+    if (pkt_types & 1) filter.filter_mask |= WIFI_PROMIS_FILTER_MASK_MGMT;
+    if (pkt_types & 2) filter.filter_mask |= WIFI_PROMIS_FILTER_MASK_CTRL;
+    if (pkt_types & 4) filter.filter_mask |= WIFI_PROMIS_FILTER_MASK_DATA;
+    esp_err = esp_wifi_set_promiscuous_filter(&filter);
+
+    if(CHECK_RES()){
+        return ERR_IOERROR_EXC;
+    }
+
+    esp_err = esp_wifi_set_promiscuous_rx_cb(&mgmt_pkt_sniffer_handler);
+    if(CHECK_RES()){
+        return ERR_IOERROR_EXC;
+    }
+
+    esp_err = esp_wifi_set_promiscuous(true);
+    if(CHECK_RES()){
+        // ACQUIRE_GIL();
+        return ERR_IOERROR_EXC;
+    }
+    sniffer.active = 1;
+
+    //must be called after set_promiscuous
+    _hop_next_channel();
+
+    //set timer
+    vosSysLock();
+    vosTimerRecurrent(sniffer.chtimer,TIME_U(sniffer.hop_time,MILLIS),_hop_timer,NULL);
+    vosSysUnlock();
+
+    return ERR_OK;
+}
+C_NATIVE(esp32_promiscuous_sniffed_stats){
+    NATIVE_UNWARN();
+    *res = MAKE_NONE();
+
+
+    PTuple *tpl = ptuple_new(9,NULL);
+    int r = _ring_elements();
+    PTUPLE_SET_ITEM(tpl,0,PSMALLINT_NEW(sniffer.sniffed));
+    PTUPLE_SET_ITEM(tpl,1,PSMALLINT_NEW(sniffer.skipped_mgmt));
+    PTUPLE_SET_ITEM(tpl,2,PSMALLINT_NEW(sniffer.skipped_ctrl));
+    PTUPLE_SET_ITEM(tpl,3,PSMALLINT_NEW(sniffer.skipped_data));
+    PTUPLE_SET_ITEM(tpl,4,PSMALLINT_NEW(sniffer.skipped_dir));
+    PTUPLE_SET_ITEM(tpl,5,PSMALLINT_NEW(sniffer.skipped_mem));
+    PTUPLE_SET_ITEM(tpl,6,PSMALLINT_NEW(r));
+    PTUPLE_SET_ITEM(tpl,7,PSMALLINT_NEW(sniffer.current_total_payload_size));
+    PTUPLE_SET_ITEM(tpl,8,PSMALLINT_NEW(sniffer.channel));
+    *res = tpl;
+    return ERR_OK;
+}
+
+C_NATIVE(esp32_promiscuous_sniffed){
+    NATIVE_UNWARN();
+    *res = MAKE_NONE();
+    RingEntry re, *rp;
+
+
+    RELEASE_GIL();
+    int npkt=_ring_elements();
+    int ipkt=0;
+
+    PList *tpl = plist_new(npkt,NULL);
+
+
+    while(ipkt<npkt){
+        _ring_get(&re);
+        PList *pkt = plist_new(15,NULL);
+        PLIST_SET_ITEM(pkt,0,PSMALLINT_NEW(re.hdr.type));
+        PLIST_SET_ITEM(pkt,1,PSMALLINT_NEW(re.hdr.subtype));
+        PLIST_SET_ITEM(pkt,2,PSMALLINT_NEW(re.hdr.to_ds));
+        PLIST_SET_ITEM(pkt,3,PSMALLINT_NEW(re.hdr.from_ds));
+        PLIST_SET_ITEM(pkt,4,PSMALLINT_NEW(re.hdr.flags));
+        PLIST_SET_ITEM(pkt,5,PSMALLINT_NEW(re.hdr.duration_id));
+        PLIST_SET_ITEM(pkt,6,PSMALLINT_NEW(re.hdr.sequence_ctrl));
+        PBytes *pa1 = pbytes_new(6,re.hdr.addr1);
+        PBytes *pa2 = pbytes_new(6,re.hdr.addr2);
+        PBytes *pa3 = pbytes_new(6,re.hdr.addr3);
+        PBytes *pa4 = pbytes_new(6,re.hdr.addr4);
+        PLIST_SET_ITEM(pkt,7,pa1);
+        PLIST_SET_ITEM(pkt,8,pa2);
+        PLIST_SET_ITEM(pkt,9,pa3);
+        PLIST_SET_ITEM(pkt,10,pa4);
+        PLIST_SET_ITEM(pkt,11,PSMALLINT_NEW(re.rssi));
+        PLIST_SET_ITEM(pkt,12,PSMALLINT_NEW(re.channel));
+        PLIST_SET_ITEM(pkt,13,PSMALLINT_NEW(re.payload_size));
+        PBytes *pl;
+        if (re.payload) {
+            pl = pbytes_new(re.payload_size,re.payload);
+        } else {
+            pl = pbytes_new(0,NULL);
+        }
+        PLIST_SET_ITEM(pkt,14,pl);
+        _ring_free(&re);
+        PLIST_SET_ITEM(tpl,ipkt,pkt);
+        ipkt++;
+    }
+    *res = tpl;
+    ACQUIRE_GIL();
+
+    return ERR_OK;
+
+}
+
+
+C_NATIVE(esp32_promiscuous_off)
+{
+    NATIVE_UNWARN();
+    *res = MAKE_NONE();
+
+    esp_err_t esp_err = _promiscuous_off();
+
+    if(CHECK_RES()){
+        return ERR_IOERROR_EXC;
+    }
+
+    return ERR_OK;
 }

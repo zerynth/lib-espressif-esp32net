@@ -1,4 +1,3 @@
-"""
 .. module:: esp32wifi
 
 *****************
@@ -8,234 +7,19 @@ ESP32 Wifi Module
 This module implements the Zerynth driver for the Espressif ESP32 Wi-Fi chip (`Resources and Documentation <https://esp-idf.readthedocs.io/en/latest/api-reference/wifi/index.html>`_).
 This module supports SoftAP mode and SSL/TLS. It also support promiscuous mode for wifi packet sniffing.
 
-    """
-
-
-
-
-@native_c("_espwifi_init",
-    [
-        #-if ZERYNTH_SSL
-        "#csrc/misc/zstdlib.c",
-        #-endif
-        "#csrc/zsockets/*",
-        "csrc/wifi_ifc.c"
-    ],
-    [
-        "VHAL_WIFI"
-    ],
-    [
-        "-I.../csrc",
-        "-I#csrc/zsockets"
-    ]
-)
-def _hwinit():
-    pass
-
-
-def auto_init():
-    init()
-
-def init():
-    """
+    
 .. function:: init()  
         
         initializes the Wi-Fi chip connected to the device.
         
         The WiFi chip is setup and can be managed using the :ref:`Wi-Fi Module <stdlib_wifi>` of the Zerynth Standard Library.      
             
-    """
-    _hwinit()
-    __builtins__.__default_net["wifi"] = __module__
-    __builtins__.__default_net["sock"][0] = __module__ #AF_INET
-    __builtins__.__default_net["ssl"] = __module__
-
-
-@native_c("esp32_wifi_link",[],[])
-def link(ssid,sec,password):
-    pass
-
-@native_c("esp32_wifi_is_linked",[],[])
-def is_linked():
-    pass
-
-
-@native_c("esp32_wifi_scan",["csrc/*"])
-def scan(duration):
-    pass
-
-@native_c("esp32_wifi_unlink",["csrc/*"])
-def unlink():
-    pass
-
-
-@native_c("esp32_net_link_info",[])
-def link_info():
-    pass
-
-@native_c("esp32_net_set_link_info",[])
-def set_link_info(ip,mask,gw,dns):
-    pass
-
-@native_c("esp32_net_resolve",["csrc/*"])
-def gethostbyname(hostname):
-    pass
-
-
-@native_c("esp32_net_socket",["csrc/*"])
-def socket(family,type,proto):
-    pass
-
-@native_c("esp32_net_setsockopt",["csrc/*"])
-def setsockopt(sock,level,optname,value):
-    pass
-
-
-@native_c("esp32_net_close",["csrc/*"])
-def close(sock):
-    pass
-
-
-@native_c("esp32_net_sendto",["csrc/*"])
-def sendto(sock,buf,addr,flags=0):
-    pass
-
-@native_c("esp32_net_send",["csrc/*"])
-def send(sock,buf,flags=0):
-    pass
-
-@native_c("esp32_net_send_all",["csrc/*"])
-def sendall(sock,buf,flags=0):
-    pass
-
-
-@native_c("esp32_net_recv_into",["csrc/*"])
-def recv_into(sock,buf,bufsize,flags=0,ofs=0):
-    pass
-
-
-@native_c("esp32_net_recvfrom_into",["csrc/*"])
-def recvfrom_into(sock,buf,bufsize,flags=0):
-    pass
-
-
-@native_c("esp32_net_bind",["csrc/*"])
-def bind(sock,addr):
-    pass
-
-@native_c("esp32_net_listen",["csrc/*"])
-def listen(sock,maxlog=2):
-    pass
-
-@native_c("esp32_net_accept",["csrc/*"])
-def accept(sock):
-    pass
-
-@native_c("esp32_net_connect",["csrc/*"])
-def connect(sock,addr):
-    pass
-
-@native_c("esp32_net_select",[])
-def select(rlist,wist,xlist,timeout):
-    pass
-
-
-@native_c("esp32_softap_init",["csrc/*"])
-def softap_init(ssid,sec,password,max_conn):
-    pass
-
-@native_c("esp32_softap_config",["csrc/*"])
-def softap_config(ip,gw,net):
-    pass
-
-@native_c("esp32_turn_ap_off",["csrc/*"])
-def softap_off():
-    pass
-
-@native_c("esp32_turn_station_on",["csrc/*"])
-def station_on():
-    pass
-
-@native_c("esp32_turn_station_off",["csrc/*"])
-def station_off():
-    pass
-
-@native_c("esp32_softap_get_info",["csrc/*"])
-def softap_get_info():
-    pass
-
-@native_c("esp32_wifi_rssi",[])
-def get_rssi():
-    """
+    
 .. function:: get_rssi()
 
     Returns the current RSSI in dBm
 
-    """
-    pass
-
-
-@native_c("esp32_secure_socket",[],[])
-def secure_socket(family, type, proto, ctx):
-    pass
-
-########### Wifi Sniffer
-
-WIFI_PKT_MGMT = 0
-WIFI_PKT_CTRL = 1
-WIFI_PKT_DATA = 2
-
-
-WIFI_PKT_MGMT_ASSOC_REQ     = 0
-WIFI_PKT_MGMT_ASSOC_RES     = 1
-WIFI_PKT_MGMT_REASSOC_REQ   = 2
-WIFI_PKT_MGMT_REASSOC_RES   = 3
-WIFI_PKT_MGMT_PROBE_REQ     = 4
-WIFI_PKT_MGMT_PROBE_RES     = 5
-WIFI_PKT_MGMT_TIMING_ADV    = 6
-WIFI_PKT_MGMT_BEACON        = 8
-WIFI_PKT_MGMT_ATIM          = 9
-WIFI_PKT_MGMT_DISASSOC      = 10
-WIFI_PKT_MGMT_AUTH          = 11
-WIFI_PKT_MGMT_DEAUTH        = 12
-WIFI_PKT_MGMT_ACTION        = 13
-WIFI_PKT_MGMT_ACTION_NACK   = 14
-
-WIFI_PKT_CTRL_PSPOLL        = 10
-WIFI_PKT_CTRL_RTS           = 11
-WIFI_PKT_CTRL_CTS           = 12
-WIFI_PKT_CTRL_ACK           = 13
-WIFI_PKT_CTRL_CFEND         = 14
-WIFI_PKT_CTRL_CFEND_ACK     = 15
-
-WIFI_PKT_DATA_DATA                = 0
-WIFI_PKT_DATA_DATA_CFACK          = 1
-WIFI_PKT_DATA_DATA_CFPOLL         = 2
-WIFI_PKT_DATA_DATA_CFPOLL_ACK     = 3
-WIFI_PKT_DATA_NULLDATA            = 4
-WIFI_PKT_DATA_NULLDATA_CFACK      = 5
-WIFI_PKT_DATA_NULLDATA_CFPOLL     = 6
-WIFI_PKT_DATA_NULLDATA_CFPOLL_ACK = 7
-WIFI_PKT_DATA_QOS                 = 8
-WIFI_PKT_DATA_QOS_CFACK           = 9
-WIFI_PKT_DATA_QOS_CFPOLL          = 10
-WIFI_PKT_DATA_QOS_CFPOLL_ACK      = 11
-WIFI_PKT_DATA_NULLQOS             = 12
-WIFI_PKT_DATA_NULLQOS_CFPOLL      = 14
-WIFI_PKT_DATA_QOS_CFPOLL_ACK      = 15
-
-
-WIFI_DIR_TO_NULL_FROM_NULL   = 1
-WIFI_DIR_TO_NULL_FROM_DS     = 2
-WIFI_DIR_TO_DS_FROM_NULL     = 4
-WIFI_DIR_TO_DS_FROM_DS       = 8
-
-@native_c("esp32_promiscuous_on", [], [])
-def _start_promiscuous(packet_types,direction,channels,mgmt_subtypes,ctrl_subtypes,data_subtypes,hop_time,pkt_buffer,max_payloads):
-    pass
-
-def start_sniffer(packet_types=[],direction=15,channels=[],mgmt_subtypes=[],ctrl_subtypes=[],data_subtypes=[],hop_time=5000,pkt_buffer=32,max_payloads=4096):
-    """
+    
 .. function:: start_sniffer(packet_types=[], direction=0xf, channels=[], mgmt_subtypes=[], ctrl_subtypes=[], data_subtypes=[], hop_time=5000, pkt_buffer=32, max_payloads=4096)
 
     Start the wifi sniffer or change its configuration if already started.
@@ -306,66 +90,7 @@ def start_sniffer(packet_types=[],direction=15,channels=[],mgmt_subtypes=[],ctrl
     * :samp:`WIFI_PKT_DATA_NULLQOS_CFPOLL`, data packet with no data for qos with cf poll
     * :samp:`WIFI_PKT_DATA_QOS_CFPOLL_ACK`, data packet with no data for qos with cf poll ack
 
-    """
-    # determine packet types
-    pkt_types = 0
-    for p in packet_types:
-        if p>=WIFI_PKT_MGMT and p<=WIFI_PKT_DATA:
-            #encode packet type
-            pkt_types = pkt_types | (1<<p)
-    if not pkt_types:
-        pkt_types = 1  # default is 1<<WIFI_PKT_MGMT
-
-    # determine channels
-    _channels = 0
-    for p in channels:
-        if p>=1 and p<=14:
-            _channels = _channels | (1<<p)
-    if not _channels:
-        _channels = 2 # default is (1<<1), channel 1
-
-    # determine mgmt_subtypes
-    _mgmt = 0
-    for p in mgmt_subtypes:
-        if p>=0 and p<=15:
-            _mgmt = _mgmt | (1<<p)
-    if not _mgmt:
-        _mgmt = (1<<WIFI_PKT_MGMT_PROBE_REQ) | (1<<WIFI_PKT_MGMT_PROBE_RES)  #default
-
-    # determine ctrl_subtypes
-    _ctrl = 0
-    for p in ctrl_subtypes:
-        if p>=0 and p<=15:
-            _ctrl = _ctrl | (1<<p)
-    if not _ctrl:
-        _ctrl = (1<<WIFI_PKT_CTRL_ACK)  #default
-
-    # determine dat_subtypes
-    _data = 0
-    for p in data_subtypes:
-        if p>=0 and p<=15:
-            _data = _data | (1<<p)
-    if not _data:
-        _data = (1<<WIFI_PKT_DATA_DATA) | (1<<WIFI_PKT_DATA_NULLDATA) | (1<<WIFI_PKT_DATA_NULLQOS) | (1<<WIFI_PKT_DATA_QOS)
-
-    if pkt_buffer<=0:
-        pkt_buffer=2
-
-    if hop_time<=100:
-        hop_time=100
-
-    if max_payloads<0:
-        max_payloads=0
-
-    if direction<0 or direction>15:
-        direction=15
-
-    _start_promiscuous(pkt_types,direction,_channels,_mgmt,_ctrl,_data,hop_time,pkt_buffer,max_payloads)
-
-
-@native_c("esp32_promiscuous_sniffed_stats", [], [])
-def get_sniffer_stats():
-    """
+    
 .. function:: get_sniffer_stats()
 
     Return a tuple with sniffer statistics:
@@ -382,14 +107,7 @@ def get_sniffer_stats():
 
     Filters are applied in a specific order: direction filter first and then subtype filter. 
 
-    """
-    pass
-
-
-
-@native_c("esp32_promiscuous_sniffed", [], [])
-def sniff_raw():
-    """
+    
 .. function:: sniff_raw()
 
     Return a list of sniffed packets from the underlying packet buffer.
@@ -439,32 +157,14 @@ def sniff_raw():
 
     The returned list of packets is usually as big as the number of packets in the buffer and never exceeds that amount.
 
-    """
-    pass
-
-def sniff():
-    """
+    
 .. function:: sniff()
 
     The same as sniff_raw, except that the addresses are returned as hexadecimal strings in the format AA:BB:CC:DD:EE:FF.
 
-    """
-    pkts = sniff_raw()
-    for pkt in pkts:
-        for i in range(7,11):
-            mac = ":".join([hex(x,"") for x in pkt[i]])
-            pkt[i] = mac
-    return pkts
-
-
-
-
-@native_c("esp32_promiscuous_off", [], [])
-def stop_sniffer():
-    """
+    
 .. function:: stop_sniffer()
 
     Stops the sniffer and free buffer and pool memory.
 
-    """
-    pass
+    

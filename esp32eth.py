@@ -13,7 +13,25 @@ This module supports SSL/TLS
 
 
 
-@native_c("_espeth_init",["csrc/wifi_ifc.c","csrc/cbuild.json"],["VHAL_ETH","CONFIG_PHY_SMI_MDC_PIN=23","CONFIG_PHY_SMI_MDIO_PIN=18"],[])
+@native_c("_espeth_init",
+    [
+        #-if ZERYNTH_SSL
+        "#csrc/misc/zstdlib.c",
+        #-endif
+        "#csrc/zsockets/*",
+        "csrc/wifi_ifc.c",
+        "csrc/cbuild.json"
+    ],
+    [
+        "VHAL_ETH",
+        "CONFIG_PHY_SMI_MDC_PIN=23",
+        "CONFIG_PHY_SMI_MDIO_PIN=18"
+    ],
+    [
+        "-I.../csrc",
+        "-I#csrc/zsockets"
+    ]
+)
 def _hwinit():
     pass
 

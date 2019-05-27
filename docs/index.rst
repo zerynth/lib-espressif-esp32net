@@ -4,7 +4,7 @@
 Espressif ESP32 Wifi
 ********************
 
-This module implements the wifi driver for ESP32. It includes support for softAP mode and SSL/TLS.
+This module implements the wifi driver for ESP32. It includes support for softAP mode, SSL/TLS and packet sniffing.
 
 
 To use the module expand on the following example: ::
