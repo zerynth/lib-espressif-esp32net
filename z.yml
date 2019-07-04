@@ -1,0 +1,14 @@
+---
+description: Driver for ESP32 Networking (Wifi+Ethernet)
+fullname: lib.espressif.esp32net
+info:
+    chip_manufacturer: Espressif
+    chip_name: ESP32
+    name: Network Driver
+    type: Connectivity
+keywords:
+- wireless
+- wifi
+- ethernet
+title: ESP32 Networking
+...

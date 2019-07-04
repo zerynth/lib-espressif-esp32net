@@ -1,9 +1,0 @@
-{
-	"version":"1.0.0",
-	"title":"esp32net",
-	"copyright":"Zerynth Team",
-	"files":[
-		["ESP32 Ethernet","esp32eth.py"],
-		["ESP32 Wifi","esp32wifi.py"]
-	]
-}

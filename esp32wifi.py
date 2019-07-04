@@ -38,12 +38,12 @@ def auto_init():
 
 def init():
     """
-.. function:: init()  
-        
+.. function:: init()
+
         initializes the Wi-Fi chip connected to the device.
-        
-        The WiFi chip is setup and can be managed using the :ref:`Wi-Fi Module <stdlib_wifi>` of the Zerynth Standard Library.      
-            
+
+        The WiFi chip is setup and can be managed using the :ref:`Wi-Fi Module <stdlib_wifi>` of the Zerynth Standard Library.
+
     """
     _hwinit()
     __builtins__.__default_net["wifi"] = __module__
@@ -230,7 +230,7 @@ WIFI_DIR_TO_NULL_FROM_DS     = 2
 WIFI_DIR_TO_DS_FROM_NULL     = 4
 WIFI_DIR_TO_DS_FROM_DS       = 8
 
-@native_c("esp32_promiscuous_on", [], [])
+@native_c("esp32_promiscuous_on", ["csrc/wifi_sniffer.c"], [])
 def _start_promiscuous(packet_types,direction,channels,mgmt_subtypes,ctrl_subtypes,data_subtypes,hop_time,pkt_buffer,max_payloads):
     pass
 
@@ -259,7 +259,7 @@ def start_sniffer(packet_types=[],direction=15,channels=[],mgmt_subtypes=[],ctrl
     * :samp:`WIFI_DIR_TO_NULL_FROM_DS`, for 01 direction, packets entering the network
     * :samp:`WIFI_DIR_TO_DS_FROM_DS`, for 11 direction, packets entering/leaving the network in a WDS system
 
-    The sniffer can only sniff one channel at a time. To work around this limitation is possible to specify a list of :samp:`channels` in the range [1..14] and a :samp:`hop_time` in milliseconds. The sniffer will listen on each channel in :samp:`channels` for :samp:`hop_time` before jumping to the next.
+    The sniffer can only sniff one channel at a time. To work around this limitation is possible to specify a list of :samp:`channels` in the range [1..13] and a :samp:`hop_time` in milliseconds. The sniffer will listen on each channel in :samp:`channels` for :samp:`hop_time` before jumping to the next.
 
     Sniffing packets can be a memory intensive task because both the high rate of packet traffic and the size of each packet that can reach 2Kb. It is possible to configure the sniffer memorywise by specifying the number of packets headers to retain in memory (:samp:`pkt_buffer`) and how much memory reserve to packet payloads (the actual data contained in the packet) :samp:`max_payloads`. The sniffer will keep collecting headers until :samp:`pkt_buffer` packets are buffered, discarding all the incoming packets if the buffer is full. The packet payload is buffered only if there is enough memory in the payload memory pool. It is therefore possible to sniff packet with complete headers but missing payloads if the memory pool is full but the packet buffer is not.
 
@@ -319,7 +319,7 @@ def start_sniffer(packet_types=[],direction=15,channels=[],mgmt_subtypes=[],ctrl
     # determine channels
     _channels = 0
     for p in channels:
-        if p>=1 and p<=14:
+        if p>=1 and p<=13:
             _channels = _channels | (1<<p)
     if not _channels:
         _channels = 2 # default is (1<<1), channel 1
@@ -363,7 +363,7 @@ def start_sniffer(packet_types=[],direction=15,channels=[],mgmt_subtypes=[],ctrl
     _start_promiscuous(pkt_types,direction,_channels,_mgmt,_ctrl,_data,hop_time,pkt_buffer,max_payloads)
 
 
-@native_c("esp32_promiscuous_sniffed_stats", [], [])
+@native_c("esp32_promiscuous_sniffed_stats", ["csrc/wifi_sniffer.c"], [])
 def get_sniffer_stats():
     """
 .. function:: get_sniffer_stats()
@@ -380,14 +380,14 @@ def get_sniffer_stats():
     * number of bytes used up in the payload memory pool
     * current sniffer channel
 
-    Filters are applied in a specific order: direction filter first and then subtype filter. 
+    Filters are applied in a specific order: direction filter first and then subtype filter.
 
     """
     pass
 
 
 
-@native_c("esp32_promiscuous_sniffed", [], [])
+@native_c("esp32_promiscuous_sniffed", ["csrc/wifi_sniffer.c"], [])
 def sniff_raw():
     """
 .. function:: sniff_raw()
@@ -404,7 +404,7 @@ def sniff_raw():
     * an integer representing the duration_id field of the packet
     * an integer representing the sequence control field of the packet
     * a bytes of 6 elements representing the mac address 1
-    * a bytes of 6 elements representing the mac address 2 
+    * a bytes of 6 elements representing the mac address 2
     * a bytes of 6 elements representing the mac address 3
     * a bytes of 6 elements representing the mac address 4
     * an integer representing the RSSI
@@ -421,11 +421,11 @@ def sniff_raw():
         * address 1 is the destination MAC
         * address 2 is the source MAC
         * address 3 is the BSSID (the MAC of the AP)
-    * for :samp:`to_ds` 1 and :samp:`from_ds` 0: 
+    * for :samp:`to_ds` 1 and :samp:`from_ds` 0:
         * address 1 is the BSSID
         * address 2 is the source MAC
         * address 3 is the destination MAC (outside the wifi network)
-    * for :samp:`to_ds` 0 and :samp:`from_ds` 1: 
+    * for :samp:`to_ds` 0 and :samp:`from_ds` 1:
         * address 1 is the destination MAC
         * address 2 is the BSSID
         * address 3 is the source MAC (outside the wifi network)
@@ -459,7 +459,7 @@ def sniff():
 
 
 
-@native_c("esp32_promiscuous_off", [], [])
+@native_c("esp32_promiscuous_off", ["csrc/wifi_sniffer.c"], [])
 def stop_sniffer():
     """
 .. function:: stop_sniffer()

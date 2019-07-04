@@ -27,7 +27,7 @@ try:
     # they can be analyzed to gather more  information on identities
     wifi_driver.start_sniffer(
         packet_types=[wifi_driver.WIFI_PKT_MGMT],
-        channels = [1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+        channels = [1,2,3,4,5,6,7,8,9,10,11,12,13],
         mgmt_subtypes=[wifi_driver.WIFI_PKT_MGMT_PROBE_REQ],
         direction = wifi_driver.WIFI_DIR_TO_NULL_FROM_NULL,
         pkt_buffer=32,
