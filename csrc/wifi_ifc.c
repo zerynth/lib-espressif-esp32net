@@ -42,7 +42,7 @@ typedef struct _wifidrv {
     ip4_addr_t ip;
     ip4_addr_t mask;
     ip4_addr_t gw;
-    ip4_addr_t dns;
+    ip_addr_t dns;
     uint8_t status;
     uint8_t error;
     uint8_t connected;
@@ -61,7 +61,7 @@ typedef struct _ethdrv {
     ip4_addr_t ip;
     ip4_addr_t mask;
     ip4_addr_t gw;
-    ip4_addr_t dns;
+    ip_addr_t dns;
     uint8_t status;
     uint8_t error;
     uint8_t connected;
@@ -206,6 +206,74 @@ int esp32_gzsock_close(int sock) {
     return NETFN(close, sock);
 }
 
+int esp32_gzsock_select(int maxfdp1, void *readset, void *writeset, void *exceptset, struct timeval *tv) {
+    if (maxfdp1 < SSLSOCK_NUM) {
+        return lwip_select(maxfdp1, readset, writeset, exceptset, tv);
+    }
+
+    fd_set *read_fds = (fd_set*) readset;
+
+    int i, ret;
+    int sock_id = -1;
+
+#if 0
+    printf("readset %x %i %i %i\n", read_fds, LWIP_SOCKET_OFFSET, FD_SETSIZE, sizeof(fd_set));
+
+    uint8_t *fd_set_pnt = (uint8_t*) read_fds;
+    for (i = 0; i < sizeof(fd_set); i++) {
+        printf("%x-\n", fd_set_pnt[i]);
+    }
+
+    for (i=SSLSOCK_NUM; i < SSLSOCK_NUM + FD_SETSIZE; i++) {
+        printf("iiset %i?\n", i);
+        if (FD_ISSET(i, read_fds)) {
+            printf("iiset %i!\n", i);
+            // only one read source supported
+            sock_id = i;
+            break;
+        }
+    }
+#endif
+
+    // derive sock to check data availability from maxfdp1 since sock_id is too high for tls sockets
+    // to comply with FD_SET limits
+    sock_id = maxfdp1 - 1;
+
+    if (sock_id < 0) {
+        return -1;
+    }
+
+    // printf("in msglen %i offst %i state %i keep current %i\n", sslsocks[sock_id-SSLSOCK_NUM].ssl.in_msglen, sslsocks[sock_id-SSLSOCK_NUM].ssl.in_offt, sslsocks[sock_id-SSLSOCK_NUM].ssl.state, sslsocks[sock_id-SSLSOCK_NUM].ssl.keep_current_message);
+
+    if (sslsocks[sock_id-SSLSOCK_NUM].ssl.in_msglen > 0) {
+        // something has still to be read from tls record
+        return 1;
+    }
+
+    // nothing available inside previous tls record, do real select
+    int fd = sslsocks[sock_id-SSLSOCK_NUM].fd.fd;
+    if ( fd < 0 ) {
+        return ( MBEDTLS_ERR_NET_INVALID_CONTEXT );
+    }
+
+    FD_ZERO( read_fds );
+    FD_SET( fd, read_fds );
+
+#if 0
+    uint32_t timeout = tv->tv_sec * 1000 + ((uint32_t) (tv->tv_usec/1000));
+    printf("timeout %i\n", timeout);
+    uint64_t xx = _systime_millis;
+#endif
+
+    ret = lwip_select( fd + 1, read_fds, NULL, NULL, tv );
+
+#if 0
+    printf("passed %i %i\n", (uint32_t) (_systime_millis - xx), ret);
+#endif
+    return ret;
+}
+
+
 SocketAPIPointers esp32_api;
 
 void init_socket_api_pointers(void) {
@@ -224,7 +292,7 @@ void init_socket_api_pointers(void) {
     esp32_api.send = esp32_gzsock_send;
     esp32_api.sendto = lwip_sendto_r;
     esp32_api.socket = lwip_socket;
-    esp32_api.select = lwip_select;
+    esp32_api.select = esp32_gzsock_select;
     esp32_api.ioctl = lwip_ioctl_r;
     esp32_api.fcntl = lwip_fcntl_r;
 
@@ -601,7 +669,7 @@ C_NATIVE(esp32_net_set_link_info)
 
     drv.ip.addr = ip.ip;
     drv.gw.addr = gw.ip;
-    drv.dns.addr = dns.ip;
+    drv.dns.u_addr.ip4.addr = dns.ip;
     drv.mask.addr = mask.ip;
     if (ip.ip != 0)
         drv.has_link_info = 1;
