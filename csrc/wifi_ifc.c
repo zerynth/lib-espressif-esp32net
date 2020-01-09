@@ -343,13 +343,19 @@ C_NATIVE(_espwifi_init)
 #if defined(VHAL_ETH)
 
 #if defined(ESP32_ETH_PHY_LAN8720)
+
 #include "eth_phy/phy_lan8720.h"
 #define DEFAULT_ETHERNET_PHY_CONFIG phy_lan8720_default_ethernet_config
+
+#elif defined(ESP32_ETH_PHY_IP101)
+#include "eth_phy/phy_ip101.h"
+#define DEFAULT_ETHERNET_PHY_CONFIG phy_ip101_default_ethernet_config
+
+#endif
+
 //passed by hwinit as macros
 #define PIN_SMI_MDC   CONFIG_PHY_SMI_MDC_PIN
 #define PIN_SMI_MDIO  CONFIG_PHY_SMI_MDIO_PIN
-
-
 
 static void eth_gpio_config_rmii(void)
 {
@@ -363,9 +369,6 @@ static void eth_gpio_config_rmii(void)
     phy_rmii_configure_data_interface_pins();
     phy_rmii_smi_configure_pins(PIN_SMI_MDC, PIN_SMI_MDIO);
 }
-
-#endif
-
 
 C_NATIVE(_espeth_init)
 {
@@ -381,7 +384,11 @@ C_NATIVE(_espeth_init)
     esp_event_loop_init(net_event_handler, NULL);
 
     eth_config_t cfg = DEFAULT_ETHERNET_PHY_CONFIG;
+#if defined(ESP32_ETH_PHY_IP101)
+    cfg.phy_addr = 1; //CONFIG_PHY_ADDRESS;
+#elif defined(ESP32_ETH_PHY_LAN8720)
     cfg.phy_addr = 0; //CONFIG_PHY_ADDRESS;
+#endif
     cfg.gpio_config = eth_gpio_config_rmii;
     cfg.tcpip_input = tcpip_adapter_eth_input;
     cfg.clock_mode = ETH_CLOCK_GPIO0_IN;// CONFIG_PHY_CLOCK_MODE;
