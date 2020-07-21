@@ -15,7 +15,6 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/error.h"
 #include "mbedtls/certs.h"
-#include "zerynth_hwcrypto.h"
 #include "zerynth.h"
 #include "zerynth_sockets.h"
 #include "zerynth_ssl.h"

@@ -5,4 +5,15 @@
 config:
     # enable sockets
     ZERYNTH_SOCKETS: true
-    ZERYNTH_EXTERNAL_LWIP: true
+    # enable the usage of esp32 lwip headers
+    ZERYNTH_SOCKETS_EXTERNAL_TCP_STACK: true
+    # enable zerynth sockets with ssl
+    ZERYNTH_SSL: true
+    # enable usage of mbedtls compiled outside of standard lib
+    ZERYNTH_SSL_EXTERNAL_STACK: true
+    # enable usage of zsockets api compiled inside vm
+    ZERYNTH_SOCKETS_EXTERNAL_API: true
+    # use zerynth pynative functions for sockets
+    ZERYNTH_SOCKETS_PYNATIVE: true
+    # use hw crypto object from vm
+    ZERYNTH_HWCRYPTO_EXTERNAL: true

@@ -19,6 +19,7 @@ This module supports SoftAP mode and SSL/TLS. It also support promiscuous mode f
         "#csrc/misc/zstdlib.c",
         #-endif
         "#csrc/zsockets/*",
+        "#csrc/hwcrypto/*",
         "csrc/wifi_ifc.c"
     ],
     [
@@ -26,7 +27,8 @@ This module supports SoftAP mode and SSL/TLS. It also support promiscuous mode f
     ],
     [
         "-I.../csrc",
-        "-I#csrc/zsockets"
+        "-I#csrc/zsockets",
+        "-I#csrc/hwcrypto"
     ]
 )
 def _hwinit():
@@ -77,65 +79,65 @@ def link_info():
 def set_link_info(ip,mask,gw,dns):
     pass
 
-@native_c("esp32_net_resolve",["csrc/*"])
+@native_c("py_net_resolve",["csrc/*"])
 def gethostbyname(hostname):
     pass
 
 
-@native_c("esp32_net_socket",["csrc/*"])
+@native_c("py_net_socket",["csrc/*"])
 def socket(family,type,proto):
     pass
 
-@native_c("esp32_net_setsockopt",["csrc/*"])
+@native_c("py_net_setsockopt",["csrc/*"])
 def setsockopt(sock,level,optname,value):
     pass
 
 
-@native_c("esp32_net_close",["csrc/*"])
+@native_c("py_net_close",["csrc/*"])
 def close(sock):
     pass
 
 
-@native_c("esp32_net_sendto",["csrc/*"])
+@native_c("py_net_sendto",["csrc/*"])
 def sendto(sock,buf,addr,flags=0):
     pass
 
-@native_c("esp32_net_send",["csrc/*"])
+@native_c("py_net_send",["csrc/*"])
 def send(sock,buf,flags=0):
     pass
 
-@native_c("esp32_net_send_all",["csrc/*"])
+@native_c("py_net_send_all",["csrc/*"])
 def sendall(sock,buf,flags=0):
     pass
 
 
-@native_c("esp32_net_recv_into",["csrc/*"])
+@native_c("py_net_recv_into",["csrc/*"])
 def recv_into(sock,buf,bufsize,flags=0,ofs=0):
     pass
 
 
-@native_c("esp32_net_recvfrom_into",["csrc/*"])
+@native_c("py_net_recvfrom_into",["csrc/*"])
 def recvfrom_into(sock,buf,bufsize,flags=0):
     pass
 
 
-@native_c("esp32_net_bind",["csrc/*"])
+@native_c("py_net_bind",["csrc/*"])
 def bind(sock,addr):
     pass
 
-@native_c("esp32_net_listen",["csrc/*"])
+@native_c("py_net_listen",["csrc/*"])
 def listen(sock,maxlog=2):
     pass
 
-@native_c("esp32_net_accept",["csrc/*"])
+@native_c("py_net_accept",["csrc/*"])
 def accept(sock):
     pass
 
-@native_c("esp32_net_connect",["csrc/*"])
+@native_c("py_net_connect",["csrc/*"])
 def connect(sock,addr):
     pass
 
-@native_c("esp32_net_select",[])
+@native_c("py_net_select",[])
 def select(rlist,wist,xlist,timeout):
     pass
 
@@ -175,7 +177,7 @@ def get_rssi():
     pass
 
 
-@native_c("esp32_secure_socket",[],[])
+@native_c("py_secure_socket",[],[])
 def secure_socket(family, type, proto, ctx):
     pass
 
@@ -363,7 +365,7 @@ def start_sniffer(packet_types=[],direction=15,channels=[],mgmt_subtypes=[],ctrl
     _start_promiscuous(pkt_types,direction,_channels,_mgmt,_ctrl,_data,hop_time,pkt_buffer,max_payloads)
 
 
-@native_c("esp32_promiscuous_sniffed_stats", ["csrc/wifi_sniffer.c"], [])
+@native_c("esp32_promiscuous_sniffed_stats", ["csrc/wifi_sniffer.c"], [],["-I#csrc/zsockets"])
 def get_sniffer_stats():
     """
 .. function:: get_sniffer_stats()
